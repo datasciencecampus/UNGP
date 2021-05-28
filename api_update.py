@@ -5,38 +5,61 @@ import time
 from datetime import datetime
 import os
 
-# read env variables
-if os.environ
+# check and read env variables
+MANDATORY_ENV_VARS = ["EE_token", "EE_url", "numAttempts", "delayBetweenAttempts", "delayBetweenPings", "numLinesInCSV","debug"]
+
+for var in MANDATORY_ENV_VARS:
+    if var not in os.environ:
+        raise EnvironmentError("Failed because {} is not set.".format(var))
+
 EE_token = os.environ["EE_token"]
 EE_url = os.environ["EE_url"]
-numAttempts = int(os.environ["numAttempts"])   # how many times it tried to get get the data before giving up. With every attempt data for a longer period is extracted
+numAttempts = int(os.environ["numAttempts"])   # how many times it tries to get the data before giving up. With every attempt data for a longer period is extracted
 delayBetweenAttempts = int(os.environ["delayBetweenAttempts"])   # measured in seconds
 delayBetweenPings = int(os.environ["delayBetweenPings"])   # measured in seconds -> how often in normal times it should retrieve data
+numLines = int(os.environ["numLinesInCSV"])
+debugLevel = int(os.environ["debugLevel"])
 
+
+# making sure that they make sense
 assert (len(EE_token) >= 30)
 assert (len(EE_url) >= 30)
 assert (numAttempts >= 5)
 assert (delayBetweenAttempts >= 0)
 assert (delayBetweenPings >= 20)
+assert (numLines >= 5000)
 
-#test print - to be removed
-print ("EE_token:", EE_token, " EE_url:", EE_url, " numAttempts:",numAttempts, " delayBetweenAttempts:", delayBetweenAttempts, " delayBetweenPings:", delayBetweenPings)
 
-step=0
-stopFL=False
-startFL=True
+print("EE_token:", EE_token, " EE_url:", EE_url, " numAttempts:",numAttempts, " delayBetweenAttempts:",
+       delayBetweenAttempts, " delayBetweenPings:", delayBetweenPings, "debugLevel", debugLevel)
+
+# init
+step = 0
+stopFL = False
+startFL = True
+startNewDF = True
 sleepEnabledFL = True
-errorCount=0
-token = "2b0118bd-a63f-4bdd-8c47-8d2ce40b40d2"
-csv.register_dialect('pipes', lineterminator = '\r\n', delimiter=',')
+errorCount = 0
 
-while False and (not stopFL) and errorCount < 900:
-    time.sleep(0.7)
-    if  sleepEnabledFL: time.sleep(118)
-    step = step + 1
-    reqStr = "{}/gws/wfs?authkey={}&service=WFS&version=1.1.0\
-        &request=GetFeature&outputformat=csv&typeName=exactAIS:LVI\
-        &cql_filter=ts_insert_utc>=dateFormat('yyyyMMddHHmmss',currentDate('-PT{}M{}S'))".format(EE_url, EE_token, 5 if startFL else 2, delayBetweenAttempts*errorCount+15 )
+csv.register_dialect('pipes', lineterminator='\r\n', delimiter=',')
+
+while  (not stopFL) and errorCount < numAttempts:
+
+    if sleepEnabledFL:
+        time.sleep(delayBetweenPings)
+        step = step + 1
+    else:
+        time.sleep(delayBetweenAttempts)
+
+
+    reqStr="{}/gws/wfs?authkey={}&service=WFS&version=1.1.0\
+            &request=GetFeature&outputformat=csv&typeName=exactAIS:LVI\
+            &cql_filter=ts_insert_utc>=dateFormat('yyyyMMddHHmmss',currentDate('-PT{}M{}S'))"\
+            .format(EE_url, EE_token, 5 if startFL else 0, delayBetweenPings + delayBetweenAttempts*errorCount+15)
+
+    if debugLevel > 0:
+        print(reqStr)
+
     try:
         resp = requests.get(reqStr, timeout=(5,10))
     except requests.exceptions.Timeout:
@@ -61,33 +84,40 @@ while False and (not stopFL) and errorCount < 900:
     else:
         # in case of no errors extraction of data may begin
         if resp.status_code != 200:
-            # This means something went wrong and although the request was received OK the server is complining.
+            # This means something went wrong and although the request was received OK the server is complaining.
             print('error in response, status code: {}'.format(resp.status_code))
             errorCount = errorCount + 1
             sleepEnabledFL = True
         else:
-            #everything is fine so get extracting
-            csv_reader = csv.reader(resp.text.splitlines(), dialect = 'pipes' )
-            headr = next(csv_reader, None)
-            if startFL :
-                df=pd.DataFrame([x for x in csv_reader], columns= headr)
+
+            # everything is fine so get extracting
+
+            try:
+
+                csv_reader = csv.reader(resp.text.splitlines(), dialect='pipes')
+                headr = next(csv_reader, None)
+                if startNewDF :
+                    df=pd.DataFrame([x for x in csv_reader], columns=headr)
+                    startNewDF = False
+                else:
+                    df=df.append(pd.DataFrame([x for x in csv_reader], columns=headr)).drop_duplicates()
                 startFL = False
-            else:
-                df=df.append(pd.DataFrame([x for x in csv_reader], columns= headr)).drop_duplicates()
-            dflen = len(df)
-            print(step,":",dflen)
-            #reset error handling parameters
-            sleepEnabledFL = True
-            errorCount = 0
-            if dflen > 300000:
-                dateTimeObj = datetime.now()
-                df.to_csv("/data/API/shipUpdates{}_{}_{}_{}_{}.csv"
-                          .format(dateTimeObj.year,
-                                  dateTimeObj.month,
-                                  dateTimeObj.day,
-                                  dateTimeObj.hour,
-                                  dateTimeObj.minute))
-                startFL = True
+                dflen = len(df)
+                print(step,":",dflen)
 
+                # reset error handling parameters
+                sleepEnabledFL = True
+                errorCount = 0
+                if dflen > numLines:
+                    dateTimeObj = datetime.now()
+                    df.to_csv("/data/API/shipUpdates{}_{}_{}_{}_{}.csv"
+                              .format(dateTimeObj.year,
+                                      dateTimeObj.month,
+                                      dateTimeObj.day,
+                                      dateTimeObj.hour,
+                                      dateTimeObj.minute))
+                    startNewDF = True
 
+            except:
+                print("Error in trying to extract the csv from requests or create DF! Skipping the chunk and trying the next one.")
 

@@ -4,9 +4,10 @@ import pandas as pd
 import time
 from datetime import datetime
 import os
+import subprocess
 
 # check and read env variables
-MANDATORY_ENV_VARS = ["EE_token", "EE_url", "numAttempts", "delayBetweenAttempts", "delayBetweenPings", "numLinesInCSV","debug"]
+MANDATORY_ENV_VARS = ["EE_token", "EE_url", "numAttempts", "delayBetweenAttempts", "delayBetweenPings", "numLinesInCSV","debugLevel"]
 
 for var in MANDATORY_ENV_VARS:
     if var not in os.environ:
@@ -29,9 +30,10 @@ assert (delayBetweenAttempts >= 0)
 assert (delayBetweenPings >= 20)
 assert (numLines >= 5000)
 
-
-print("EE_token:", EE_token, " EE_url:", EE_url, " numAttempts:",numAttempts, " delayBetweenAttempts:",
-       delayBetweenAttempts, " delayBetweenPings:", delayBetweenPings, "debugLevel", debugLevel)
+# testing only  - to be removed
+if debugLevel >= 1:
+    print("EE_token:", EE_token, " EE_url:", EE_url, " numAttempts:",numAttempts, " delayBetweenAttempts:",
+           delayBetweenAttempts, " delayBetweenPings:", delayBetweenPings, "debugLevel", debugLevel)
 
 # init
 step = 0
@@ -110,12 +112,17 @@ while  (not stopFL) and errorCount < numAttempts:
                 errorCount = 0
                 if dflen > numLines:
                     dateTimeObj = datetime.now()
-                    df.to_csv("/data/API/shipUpdates{}_{}_{}_{}_{}.csv"
-                              .format(dateTimeObj.year,
-                                      dateTimeObj.month,
-                                      dateTimeObj.day,
-                                      dateTimeObj.hour,
-                                      dateTimeObj.minute))
+                    filePath = "/data/API/shipUpdates{}_{}_{}_{}_{}.csv"\
+                        .format(dateTimeObj.year,
+                                dateTimeObj.month,
+                                dateTimeObj.day,
+                                dateTimeObj.hour,
+                                dateTimeObj.minute)
+                    df.to_csv(filePath)
+                    print("Saved to file:", filePath)
+                    # save to s3
+                    subprocess.Popen('aws s3 --profile alexS3 cp {}  s3://ungp-poc/API/updatesTest/'.format(filePath), shell = True)
+                    print('{} Saved to S3'.format(filePath))
                     startNewDF = True
 
             except:

@@ -5,7 +5,7 @@ RUN apt-get update && \
     apt --assume-yes install python3-pip && \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.8 10 && \
     python -m pip install pip && \
-    python -m pip install pandas requests boto3
+    python -m pip install pandas requests boto3 awscli
 
 
 

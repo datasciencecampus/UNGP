@@ -31,7 +31,7 @@ assert (delayBetweenPings >= 20)
 assert (numLines >= 5000)
 
 # testing only  - to be removed
-if debugLevel >= 1:
+if debugLevel >= 2:
     print("EE_token:", EE_token, " EE_url:", EE_url, " numAttempts:",numAttempts, " delayBetweenAttempts:",
            delayBetweenAttempts, " delayBetweenPings:", delayBetweenPings, "debugLevel", debugLevel)
 
